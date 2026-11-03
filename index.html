@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>实时时间 · 世界时钟</title>
+<style>
+  :root{
+    --bg:#04060b;
+    --fg:#eaf4ff;
+    --muted:#8397b3;
+    --line:rgba(146,180,235,.16);
+    --accent:#5ce1e6;
+    --accent-2:#8b7dff;
+    --day:#ffb454;
+    --night:#7aa8ff;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  html{background:var(--bg);}
+  body{
+    margin:0;
+    min-height:100vh;
+    min-height:100svh;
+    background:
+      radial-gradient(70vw 60vh at 12% -10%, rgba(46,124,150,.28), transparent 60%),
+      radial-gradient(65vw 55vh at 92% 108%, rgba(96,74,196,.24), transparent 62%),
+      radial-gradient(90vw 80vh at 50% 50%, rgba(10,18,32,.55), transparent 75%),
+      var(--bg);
+    color:var(--fg);
+    font-family:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    pointer-events:none;
+    background-image:
+      linear-gradient(rgba(140,190,255,.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(140,190,255,.045) 1px, transparent 1px);
+    background-size:min(9vw,120px) min(9vw,120px);
+    mask-image:radial-gradient(circle at 50% 45%, rgba(0,0,0,.85), transparent 78%);
+    -webkit-mask-image:radial-gradient(circle at 50% 45%, rgba(0,0,0,.85), transparent 78%);
+  }
+  .app{
+    position:relative;
+    z-index:1;
+    min-height:100vh;
+    min-height:100svh;
+    display:flex;
+    flex-direction:column;
+    gap:clamp(12px,2vh,30px);
+    padding:clamp(14px,2.4vh,40px) clamp(18px,3.2vw,68px) clamp(14px,2.2vh,34px);
+    /* anti burn-in shift only, no layout cost */
+    transition:transform 1.6s ease;
+    will-change:auto;
+  }
+  html:fullscreen,
+  html:-webkit-full-screen{background:var(--bg);}
+
+  /* ---------- header ---------- */
+  .top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:16px;
+    font-size:clamp(11px,.95vw,17px);
+    letter-spacing:.15em;
+    color:var(--muted);
+    text-transform:uppercase;
+  }
+  .brand{display:flex;align-items:center;gap:.8em;min-width:0;padding-top:.15em;}
+  .brand-mark{
+    width:clamp(8px,.65vw,12px);height:clamp(8px,.65vw,12px);
+    border-radius:50%;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    box-shadow:0 0 16px rgba(92,225,230,.5);
+    flex:0 0 auto;
+  }
+  .brand-title{color:#dfeaf8;font-weight:600;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .brand-en{
+    font-size:.82em;letter-spacing:.26em;color:rgba(131,151,179,.72);
+    padding-left:.9em;border-left:1px solid var(--line);
+  }
+  .fs-btn{
+    -webkit-appearance:none;appearance:none;
+    display:inline-flex;align-items:center;gap:.5em;
+    cursor:pointer;font:inherit;letter-spacing:.12em;
+    color:#9fb3ca;
+    padding:.42em .8em;
+    border:1px solid var(--line);
+    border-radius:999px;
+    background:rgba(255,255,255,.03);
+    transition:color .2s ease,border-color .2s ease,background .2s ease;
+    flex:0 0 auto;
+  }
+  .fs-btn svg{width:1.1em;height:1.1em;display:block;}
+  .fs-btn:hover{color:#dff7ff;border-color:rgba(92,225,230,.5);background:rgba(92,225,230,.08);}
+  .fs-btn:focus-visible{outline:2px solid rgba(92,225,230,.85);outline-offset:3px;}
+
+  /* ---------- main stage ---------- */
+  .stage{
+    flex:1 1 auto;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:clamp(8px,1.9vh,32px);
+    min-height:0;
+  }
+  .zone-head{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:center;
+    gap:.7em 1.1em;
+    text-align:center;
+  }
+  .zone-title{display:flex;align-items:baseline;gap:.6em;}
+  .zone-city{
+    font-size:clamp(19px,2.6vmin,48px);
+    font-weight:700;
+    letter-spacing:.08em;
+    color:#f2f9ff;
+  }
+  .zone-en{
+    font-size:clamp(10px,1.2vmin,20px);
+    letter-spacing:.32em;
+    color:rgba(131,151,179,.9);
+    text-transform:uppercase;
+  }
+  .zone-meta{display:flex;align-items:center;gap:.6em;flex-wrap:wrap;justify-content:center;}
+  .pill{
+    display:inline-flex;align-items:center;gap:.5em;
+    padding:.34em .86em;
+    border:1px solid var(--line);
+    border-radius:999px;
+    background:rgba(255,255,255,.035);
+    font-size:clamp(11px,.92vw,17px);
+    letter-spacing:.06em;
+    color:#b8cbdf;
+    white-space:nowrap;
+  }
+  .pill.mono{font-variant-numeric:tabular-nums;letter-spacing:.09em;}
+  .phase-dot{
+    width:.58em;height:.58em;border-radius:50%;
+    background:var(--day);box-shadow:0 0 9px currentColor;
+    transition:background .3s ease;
+  }
+  .phase-dot.night{background:var(--night);}
+
+  /* ---------- clock ---------- */
+  .clock-wrap{position:relative;display:flex;align-items:center;justify-content:center;width:100%;}
+  .clock-wrap::before{
+    content:"";
+    position:absolute;
+    width:min(76vw,68vmin);
+    height:min(44vw,38vmin);
+    border-radius:50%;
+    background:radial-gradient(closest-side, rgba(72,198,220,.16), rgba(72,198,220,0) 72%);
+    pointer-events:none;
+  }
+  .clock{
+    position:relative;
+    display:flex;
+    align-items:baseline;
+    justify-content:center;
+    font-size:clamp(2.5rem, min(28vmin, 17.5vw), 38rem);
+    font-weight:700;
+    line-height:.92;
+    letter-spacing:-.03em;
+    font-variant-numeric:tabular-nums;
+    font-feature-settings:"tnum" 1;
+    color:#eafaff;
+    filter:drop-shadow(0 0 clamp(8px,1.6vmin,30px) rgba(70,206,228,.30));
+    user-select:none;
+  }
+  /* The gradient lives on each glyph group, so promoted layers (seconds /
+     colon transforms) still paint it. Applying background-clip on the flex
+     container alone made transformed children invisible. */
+  .clock .num,
+  .clock .sec{
+    display:inline-block;
+    background-image:linear-gradient(180deg,#ffffff 6%,#d7f6ff 48%,#6adcf2 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    -webkit-text-fill-color:transparent;
+    color:transparent;
+  }
+  .clock .sep{
+    display:inline-block;
+    margin:0 .06em;
+    opacity:.42;
+    color:#a9e6f0;
+    font-weight:400;
+    transform:translateY(-.04em);
+  }
+  .clock .sec{
+    transform-origin:50% 62%;
+  }
+  .date-line{
+    font-size:clamp(14px,2.2vmin,38px);
+    letter-spacing:.13em;
+    color:#cddfef;
+    text-align:center;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------- city tabs ---------- */
+  .foot{display:flex;flex-direction:column;gap:clamp(8px,1.2vh,18px);}
+  .zone-list{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:clamp(8px,.9vw,18px);
+  }
+  .city{
+    -webkit-appearance:none;
+    appearance:none;
+    position:relative;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:.5em;
+    text-align:left;
+    cursor:pointer;
+    color:var(--fg);
+    font:inherit;
+    padding:clamp(8px,1.2vh,20px) clamp(11px,1.05vw,22px);
+    border:1px solid var(--line);
+    border-radius:clamp(9px,.9vw,18px);
+    background:linear-gradient(160deg, rgba(255,255,255,.055), rgba(255,255,255,.015));
+    transition:border-color .22s ease, background .22s ease, transform .22s ease, box-shadow .22s ease;
+  }
+  .city::before{
+    content:"";
+    position:absolute;inset:0 0 auto 0;height:2px;
+    background:linear-gradient(90deg,var(--accent),var(--accent-2));
+    opacity:0;transition:opacity .22s ease;
+  }
+  .city:hover{border-color:rgba(146,190,245,.34);}
+  .city:focus-visible{outline:2px solid rgba(92,225,230,.85);outline-offset:3px;}
+  .city.active{
+    border-color:rgba(92,225,230,.8);
+    background:linear-gradient(160deg, rgba(92,225,230,.17), rgba(96,74,196,.10));
+    box-shadow:0 0 0 1px rgba(92,225,230,.2), 0 12px 40px rgba(51,196,214,.14);
+  }
+  .city.active::before{opacity:1;}
+  .city-main{display:flex;align-items:baseline;gap:.6em;flex-wrap:wrap;width:100%;}
+  .city-name{
+    font-size:clamp(13px,1.25vw,25px);
+    font-weight:700;
+    letter-spacing:.06em;
+    color:#e6f0fb;
+    transition:color .22s ease;
+  }
+  .city.active .city-name{color:#9df3f6;}
+  .city-en{
+    font-size:clamp(8px,.6vw,12px);
+    letter-spacing:.22em;
+    color:rgba(131,151,179,.78);
+    text-transform:uppercase;
+  }
+  .city-meta{
+    display:flex;align-items:center;gap:.45em .85em;flex-wrap:wrap;
+    font-size:clamp(10px,.8vw,15px);
+    color:#9fb3ca;
+  }
+  .city-meta .phase{display:inline-flex;align-items:center;gap:.42em;}
+  .city-meta .offset{font-variant-numeric:tabular-nums;letter-spacing:.05em;color:#8fa8c4;}
+  .city.active .city-meta .offset{color:#bfeef2;}
+
+  /* ---------- footer note / corner badge ---------- */
+  .foot-note{
+    display:grid;
+    grid-template-columns:1fr auto 1fr;
+    align-items:center;
+    gap:12px;
+    font-size:clamp(9px,.72vw,13px);
+    letter-spacing:.1em;
+    color:rgba(131,151,179,.68);
+  }
+  .foot-note .hint{justify-self:start;white-space:nowrap;}
+  .foot-note .live{justify-self:center;display:inline-flex;align-items:center;gap:.55em;white-space:nowrap;}
+  .live-dot{
+    width:.5em;height:.5em;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 0 rgba(92,225,230,.5);
+    animation:ping 2.4s ease-out infinite;
+  }
+  @keyframes ping{
+    0%{box-shadow:0 0 0 0 rgba(92,225,230,.45);}
+    70%{box-shadow:0 0 0 .7em rgba(92,225,230,0);}
+    100%{box-shadow:0 0 0 0 rgba(92,225,230,0);}
+  }
+  .tz-badge{
+    justify-self:end;
+    white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+    letter-spacing:.05em;
+    color:rgba(159,179,202,.75);
+    border:1px solid rgba(146,180,235,.13);
+    border-radius:6px;
+    padding:.2em .55em;
+    text-transform:none;
+  }
+
+  @media (max-width:1000px){
+    .zone-list{grid-template-columns:repeat(2,minmax(0,1fr));}
+    .brand-en{display:none;}
+  }
+  @media (max-width:780px){
+    .foot-note{grid-template-columns:1fr auto;}
+    .foot-note .hint{display:none;}
+    .foot-note .live{justify-self:start;}
+  }
+  @media (max-width:520px){
+    .tz-badge{display:none;}
+    .foot-note{grid-template-columns:1fr;}
+  }
+  @media (max-height:600px){
+    .app{gap:8px;padding:10px 16px;}
+    .zone-head{gap:.4em .8em;}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation:none!important;transition:none!important;}
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-title">实时时间查看</span>
+      <span class="brand-en">World Clock</span>
+    </div>
+    <button class="fs-btn" id="fsBtn" type="button" aria-pressed="false" title="进入全屏（快捷键 F）">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path>
+      </svg>
+      <span id="fsLabel">全屏</span>
+    </button>
+  </header>
+
+  <main class="stage">
+    <section class="zone-head">
+      <div class="zone-title">
+        <span class="zone-city" id="cityCn">北京</span>
+        <span class="zone-en" id="cityEn">Beijing</span>
+      </div>
+      <div class="zone-meta">
+        <span class="pill">
+          <span class="phase-dot" id="phaseDot" aria-hidden="true"></span>
+          <span id="phaseText">白天</span>
+        </span>
+        <span class="pill mono" id="offsetText">UTC+08:00</span>
+      </div>
+    </section>
+
+    <section class="clock-wrap">
+      <div class="clock" id="clock" role="timer" aria-live="off" aria-label="当前时间">
+        <span class="num" id="hh">00</span><span class="sep" aria-hidden="true">:</span><span class="num" id="mm">00</span><span class="sep" aria-hidden="true">:</span><span class="num sec" id="ss">00</span>
+      </div>
+    </section>
+
+    <section class="date-line" id="dateLine" aria-live="off">—</section>
+  </main>
+
+  <footer class="foot">
+    <div class="zone-list" id="zoneList" role="group" aria-label="选择城市时区"></div>
+    <div class="foot-note">
+      <span class="hint">← → 或 1–4 切换城市 · F / F11 全屏</span>
+      <span class="live"><span class="live-dot" aria-hidden="true"></span>数据每秒刷新</span>
+      <span class="tz-badge" id="tzBadge">Asia/Shanghai · UTC+08:00</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var ZONES = [
+    { tz: "Asia/Shanghai",     cn: "北京",     en: "Beijing" },
+    { tz: "America/New_York",  cn: "纽约",     en: "New York" },
+    { tz: "Europe/Madrid",     cn: "巴塞罗那", en: "Barcelona" },
+    { tz: "Europe/Paris",      cn: "巴黎",     en: "Paris" }
+  ];
+
+  var state = {
+    tz: "Asia/Shanghai",
+    hm: "",
+    sec: "",
+    dateKey: "",
+    day: null,
+    ticks: 0
+  };
+
+  var el = {
+    app: document.getElementById("app"),
+    clock: document.getElementById("clock"),
+    hh: document.getElementById("hh"),
+    mm: document.getElementById("mm"),
+    ss: document.getElementById("ss"),
+    dateLine: document.getElementById("dateLine"),
+    cityCn: document.getElementById("cityCn"),
+    cityEn: document.getElementById("cityEn"),
+    phaseDot: document.getElementById("phaseDot"),
+    phaseText: document.getElementById("phaseText"),
+    offsetText: document.getElementById("offsetText"),
+    zoneList: document.getElementById("zoneList"),
+    tzBadge: document.getElementById("tzBadge"),
+    fsBtn: document.getElementById("fsBtn"),
+    fsLabel: document.getElementById("fsLabel")
+  };
+
+  var timeFmtCache = {};
+  var dateFmtCache = {};
+  var offsetFmtCache = {};
+
+  function timeFormatter(tz) {
+    if (!timeFmtCache[tz]) {
+      timeFmtCache[tz] = new Intl.DateTimeFormat("en-GB", {
+        timeZone: tz, hourCycle: "h23",
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+    }
+    return timeFmtCache[tz];
+  }
+
+  function dateFormatter(tz) {
+    if (!dateFmtCache[tz]) {
+      dateFmtCache[tz] = new Intl.DateTimeFormat("zh-CN", {
+        timeZone: tz, year: "numeric", month: "2-digit", day: "numeric", weekday: "long"
+      });
+    }
+    return dateFmtCache[tz];
+  }
+
+  function offsetFormatter(tz) {
+    if (!offsetFmtCache[tz]) {
+      offsetFmtCache[tz] = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz, hourCycle: "h23",
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+      });
+    }
+    return offsetFmtCache[tz];
+  }
+
+  function parts(fmt, date) {
+    var out = {};
+    var list = fmt.formatToParts(date);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].type !== "literal") out[list[i].type] = list[i].value;
+    }
+    return out;
+  }
+
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+
+  /* Offset comes from Intl wall-clock parts, so DST transitions are automatic.
+     No fixed UTC offsets are hardcoded anywhere. */
+  function utcOffsetMinutes(tz, date) {
+    var p = parts(offsetFormatter(tz), date);
+    var hour = Number(p.hour) % 24;
+    var asUTC = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), hour, Number(p.minute), Number(p.second));
+    var local = Math.floor(date.getTime() / 1000) * 1000;
+    return Math.round((asUTC - local) / 60000);
+  }
+
+  function offsetLabel(minutes) {
+    var sign = minutes >= 0 ? "+" : "-";
+    var abs = Math.abs(minutes);
+    return "UTC" + sign + pad(Math.floor(abs / 60)) + ":" + pad(abs % 60);
+  }
+
+  function isDaytime(hour) { return hour >= 6 && hour < 18; }
+
+  function activeZone() {
+    for (var i = 0; i < ZONES.length; i++) {
+      if (ZONES[i].tz === state.tz) return ZONES[i];
+    }
+    return ZONES[0];
+  }
+
+  function activeIndex() {
+    for (var i = 0; i < ZONES.length; i++) {
+      if (ZONES[i].tz === state.tz) return i;
+    }
+    return 0;
+  }
+
+  function setPhase(btn, day) {
+    btn.querySelector('[data-role="phase"]').textContent = day ? "白天" : "夜间";
+    btn.querySelector(".phase-dot").classList.toggle("night", !day);
+  }
+
+  function buildTabs() {
+    for (var i = 0; i < ZONES.length; i++) {
+      var z = ZONES[i];
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "city";
+      btn.dataset.tz = z.tz;
+      btn.setAttribute("aria-pressed", "false");
+      btn.setAttribute("aria-label", z.cn + "，时区 " + z.tz + "，数字键 " + (i + 1));
+      btn.title = z.cn + " · " + z.tz;
+
+      var main = document.createElement("span");
+      main.className = "city-main";
+      var name = document.createElement("span");
+      name.className = "city-name";
+      name.textContent = z.cn;
+      var en = document.createElement("span");
+      en.className = "city-en";
+      en.textContent = z.en;
+      main.appendChild(name);
+      main.appendChild(en);
+
+      var meta = document.createElement("span");
+      meta.className = "city-meta";
+      var phase = document.createElement("span");
+      phase.className = "phase";
+      var dot = document.createElement("span");
+      dot.className = "phase-dot";
+      dot.setAttribute("aria-hidden", "true");
+      var phaseText = document.createElement("span");
+      phaseText.dataset.role = "phase";
+      phaseText.textContent = "—";
+      phase.appendChild(dot);
+      phase.appendChild(phaseText);
+
+      var offset = document.createElement("span");
+      offset.className = "offset";
+      offset.dataset.role = "offset";
+      offset.textContent = "—";
+
+      meta.appendChild(phase);
+      meta.appendChild(offset);
+
+      btn.appendChild(main);
+      btn.appendChild(meta);
+      btn.addEventListener("click", (function (tz) {
+        return function () { selectZone(tz); };
+      }(z.tz)));
+
+      el.zoneList.appendChild(btn);
+    }
+  }
+
+  /* Only scheduled every ~15s and after a switch: no per-second tab churn. */
+  function updateMeta(now) {
+    var z = activeZone();
+    var t = parts(timeFormatter(z.tz), now);
+    var day = isDaytime(Number(t.hour));
+    var offset = offsetLabel(utcOffsetMinutes(z.tz, now));
+
+    state.day = day;
+    el.phaseText.textContent = day ? "白天" : "夜间";
+    el.phaseDot.classList.toggle("night", !day);
+    el.offsetText.textContent = offset;
+    el.tzBadge.textContent = z.tz + " · " + offset;
+
+    var buttons = el.zoneList.children;
+    for (var i = 0; i < buttons.length; i++) {
+      var btn = buttons[i];
+      var tz = btn.dataset.tz;
+      var active = tz === state.tz;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+
+      var tt = parts(timeFormatter(tz), now);
+      setPhase(btn, isDaytime(Number(tt.hour)));
+      btn.querySelector('[data-role="offset"]').textContent = offsetLabel(utcOffsetMinutes(tz, now));
+    }
+  }
+
+  var secAnim = null;
+  function pulseSecond() {
+    if (typeof el.ss.animate !== "function") return;
+    /* Reuse one Animation object: no forced reflow and no per-second allocation. */
+    if (!secAnim) {
+      secAnim = el.ss.animate([
+        { transform: "translateY(-0.015em)", opacity: 0.9 },
+        { transform: "translateY(0)", opacity: 1 }
+      ], { duration: 360, easing: "cubic-bezier(.18,.82,.3,1)" });
+    } else {
+      secAnim.currentTime = 0;
+      secAnim.play();
+    }
+  }
+
+  var swapAnim = null;
+  function playSwap() {
+    if (typeof el.clock.animate !== "function") return;
+    if (!swapAnim) {
+      swapAnim = el.clock.animate([
+        { opacity: 0.3, transform: "translateY(0.07em) scale(0.992)", filter: "blur(3px)" },
+        { opacity: 1, transform: "none", filter: "blur(0px)" }
+      ], { duration: 460, easing: "cubic-bezier(.16,.84,.28,1)" });
+    } else {
+      swapAnim.currentTime = 0;
+      swapAnim.play();
+    }
+  }
+
+  /* Per tick only the fields that actually changed are written to the DOM. */
+  function render(animate) {
+    var now = new Date();
+    var z = activeZone();
+    var t = parts(timeFormatter(z.tz), now);
+    var hh = pad(Number(t.hour));
+    var mm = pad(Number(t.minute));
+    var ss = pad(Number(t.second));
+
+    if (hh + ":" + mm !== state.hm) {
+      state.hm = hh + ":" + mm;
+      el.hh.textContent = hh;
+      el.mm.textContent = mm;
+    }
+
+    if (ss !== state.sec) {
+      state.sec = ss;
+      el.ss.textContent = ss;
+      if (animate) pulseSecond();
+    }
+
+    var d = parts(dateFormatter(z.tz), now);
+    var dateKey = d.year + d.month + d.day + d.weekday;
+    if (dateKey !== state.dateKey) {
+      state.dateKey = dateKey;
+      el.dateLine.textContent =
+        Number(d.year) + "年" + Number(d.month) + "月" + Number(d.day) + "日" +
+        "　·　" + d.weekday;
+    }
+
+    var day = isDaytime(Number(t.hour));
+    if (day !== state.day) {
+      state.day = day;
+      el.phaseText.textContent = day ? "白天" : "夜间";
+      el.phaseDot.classList.toggle("night", !day);
+      var activeBtn = el.zoneList.querySelector(".city.active");
+      if (activeBtn) {
+        setPhase(activeBtn, day);
+        activeBtn.querySelector('[data-role="offset"]').textContent = el.offsetText.textContent;
+      }
+    }
+
+    state.ticks++;
+    if (state.ticks % 15 === 1) updateMeta(now);
+  }
+
+  function selectZone(tz) {
+    if (state.tz === tz) return;
+    state.tz = tz;
+    state.hm = "";
+    state.sec = "";
+    state.dateKey = "";
+    state.day = null;
+
+    var z = activeZone();
+    el.cityCn.textContent = z.cn;
+    el.cityEn.textContent = z.en;
+
+    playSwap();
+    render(false);
+    updateMeta(new Date());
+  }
+
+  function stepZone(dir) {
+    var idx = activeIndex();
+    var next = (idx + dir + ZONES.length) % ZONES.length;
+    selectZone(ZONES[next].tz);
+  }
+
+  /* ---------- timing: aligned to the wall-clock second ---------- */
+  var timer = 0;
+  function schedule() {
+    clearTimeout(timer);
+    var now = Date.now();
+    timer = setTimeout(loop, 1000 - (now % 1000) + 6);
+  }
+  function loop() {
+    render(true);
+    schedule();
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      clearTimeout(timer);
+      return;
+    }
+    render(false);
+    updateMeta(new Date());
+    schedule();
+  });
+
+  /* ---------- fullscreen ---------- */
+  function fullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function syncFullscreenUi() {
+    var on = !!fullscreenElement();
+    el.fsBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    el.fsBtn.title = on ? "退出全屏（快捷键 F）" : "进入全屏（快捷键 F）";
+    el.fsLabel.textContent = on ? "退出全屏" : "全屏";
+  }
+
+  function toggleFullscreen() {
+    var root = document.documentElement;
+    try {
+      if (fullscreenElement()) {
+        var exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) {
+          var p = exit.call(document);
+          if (p && typeof p.catch === "function") p.catch(function () {});
+        }
+      } else {
+        var req = root.requestFullscreen || root.webkitRequestFullscreen;
+        if (req) {
+          var q = req.call(root);
+          if (q && typeof q.catch === "function") q.catch(function () {});
+        }
+      }
+    } catch (err) { /* fullscreen blocked by browser policy */ }
+  }
+
+  el.fsBtn.addEventListener("click", toggleFullscreen);
+  document.addEventListener("fullscreenchange", syncFullscreenUi);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenUi);
+
+  /* ---------- keyboard ---------- */
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var key = e.key;
+    if (key === "f" || key === "F" || key === "F11") {
+      e.preventDefault();
+      toggleFullscreen();
+      return;
+    }
+    if (key === "ArrowLeft") { e.preventDefault(); stepZone(-1); return; }
+    if (key === "ArrowRight") { e.preventDefault(); stepZone(1); return; }
+    if (key >= "1" && key <= "4") {
+      e.preventDefault();
+      selectZone(ZONES[Number(key) - 1].tz);
+    }
+  });
+
+  /* ---------- anti burn-in: a few pixels every 5 minutes, transform only ---------- */
+  var DRIFT = [[0, 0], [3, -2], [-2, 3], [2, 2], [-3, -1], [1, -3], [0, 0]];
+  var driftIndex = 0;
+  setInterval(function () {
+    driftIndex = (driftIndex + 1) % DRIFT.length;
+    var p = DRIFT[driftIndex];
+    el.app.style.transform = "translate3d(" + p[0] + "px," + p[1] + "px,0)";
+  }, 5 * 60 * 1000);
+
+  /* ---------- init ---------- */
+  buildTabs();
+  syncFullscreenUi();
+  var initZone = activeZone();
+  el.cityCn.textContent = initZone.cn;
+  el.cityEn.textContent = initZone.en;
+  render(false);
+  updateMeta(new Date());
+  loop();
+}());
+</script>
+</body>
+</html>
